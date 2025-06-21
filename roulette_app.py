@@ -21,7 +21,13 @@ st.title("Roulette Street Encoder")
 col1, col2 = st.columns(2)
 with col1:
     spin_str = st.text_input("Enter spin (0-36):", value="")
-    add = st.button("Add Spin")
+    # Check if spin_str is a valid integer between 0 and 36
+    try:
+        spin_val = int(spin_str)
+        valid_spin = 0 <= spin_val <= 36
+    except ValueError:
+        valid_spin = False
+    add = st.button("Add Spin", disabled=not valid_spin)
 with col2:
     reset = st.button("Reset All")
 
@@ -30,22 +36,16 @@ if reset:
     st.session_state.encoded_values = []
     st.session_state.cumulative_scores = []
 
-if add:
-    try:
-        spin = int(spin_str)
-        if 0 <= spin <= 36:
-            st.session_state.spins.append(spin)
-            st.session_state.encoded_values.append(encode_roulette(spin))
-            if len(st.session_state.cumulative_scores) == 0:
-                st.session_state.cumulative_scores.append(st.session_state.encoded_values[-1])
-            else:
-                st.session_state.cumulative_scores.append(
-                    st.session_state.cumulative_scores[-1] + st.session_state.encoded_values[-1]
-                )
-        else:
-            st.warning("Spin value must be between 0 and 36.")
-    except ValueError:
-        st.warning("Please enter a valid integer between 0 and 36.")
+if add and valid_spin:
+    spin = int(spin_str)
+    st.session_state.spins.append(spin)
+    st.session_state.encoded_values.append(encode_roulette(spin))
+    if len(st.session_state.cumulative_scores) == 0:
+        st.session_state.cumulative_scores.append(st.session_state.encoded_values[-1])
+    else:
+        st.session_state.cumulative_scores.append(
+            st.session_state.cumulative_scores[-1] + st.session_state.encoded_values[-1]
+        )
 
 if st.session_state.cumulative_scores:
     fig, ax = plt.subplots(figsize=(8, 4))
