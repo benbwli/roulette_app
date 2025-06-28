@@ -1,14 +1,3 @@
-You're encountering that `AttributeError` because `st.experimental_rerun()` has been deprecated and removed in recent versions of Streamlit.
-
-Streamlit has a new, official, and more robust way to trigger a rerun: `st.rerun()`.
-
-**Here's the fix:**
-
-You just need to replace every instance of `st.experimental_rerun()` with `st.rerun()` in your code.
-
-Let me provide the corrected code.
-
-```python
 import streamlit as st
 import matplotlib.pyplot as plt
 import numpy as np
@@ -375,4 +364,3 @@ for chart_conf in st.session_state.charts:
     st.markdown("---")
 
 save_chart_configs(st.session_state.charts)
-```
