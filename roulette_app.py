@@ -1,3 +1,14 @@
+You're encountering that `AttributeError` because `st.experimental_rerun()` has been deprecated and removed in recent versions of Streamlit.
+
+Streamlit has a new, official, and more robust way to trigger a rerun: `st.rerun()`.
+
+**Here's the fix:**
+
+You just need to replace every instance of `st.experimental_rerun()` with `st.rerun()` in your code.
+
+Let me provide the corrected code.
+
+```python
 import streamlit as st
 import matplotlib.pyplot as plt
 import numpy as np
@@ -71,7 +82,7 @@ def check_password():
         hashed_attempt = hashlib.sha256(password_attempt.encode()).hexdigest()
         if hashed_attempt == CORRECT_PASSWORD_HASH:
             st.session_state[AUTH_KEY] = True
-            st.experimental_rerun()
+            st.rerun() # Changed from st.experimental_rerun()
             return True
         else:
             st.sidebar.error("Incorrect password")
@@ -121,13 +132,12 @@ multiple_spins_text = st.sidebar.text_area(
 
 def add_multiple_spins_and_save():
     if multiple_spins_text:
-        # Split by various delimiters and filter out empty strings
         raw_numbers = multiple_spins_text.replace(',', ' ').replace('\n', ' ').split(' ')
         parsed_numbers = []
         errors = []
         for num_str in raw_numbers:
             num_str = num_str.strip()
-            if num_str: # Ensure it's not an empty string after stripping
+            if num_str:
                 try:
                     num = int(num_str)
                     if 0 <= num <= 36:
@@ -138,12 +148,12 @@ def add_multiple_spins_and_save():
                     errors.append(f"Invalid number format: '{num_str}'")
         
         if parsed_numbers:
-            st.session_state.spins.extend(parsed_numbers) # Use extend for multiple items
+            st.session_state.spins.extend(parsed_numbers)
             save_spins(st.session_state.spins)
             st.sidebar.success(f"Added {len(parsed_numbers)} spins.")
             if errors:
                 st.sidebar.warning("Some numbers were not added due to errors:\n" + "\n".join(errors))
-            st.experimental_rerun()
+            st.rerun() # Changed from st.experimental_rerun()
         elif errors:
             st.sidebar.error("No valid spins to add. Errors found:\n" + "\n".join(errors))
         else:
@@ -160,14 +170,14 @@ def delete_last_spin():
     if st.session_state.spins:
         st.session_state.spins.pop()
         save_spins(st.session_state.spins)
-        st.experimental_rerun()
+        st.rerun() # Changed from st.experimental_rerun()
 
 st.sidebar.button("Delete Last Spin", on_click=delete_last_spin, disabled=(not st.session_state.spins), help="Removes the most recent spin entry.")
 
 if st.sidebar.button("Clear All Spins", help="This will reset all recorded spins."):
     st.session_state.spins = []
     save_spins([])
-    st.experimental_rerun()
+    st.rerun() # Changed from st.experimental_rerun()
 
 # --- Full Reset Function ---
 def full_reset():
@@ -182,7 +192,7 @@ def full_reset():
     st.session_state[AUTH_KEY] = False
 
     st.success("App has been fully reset. Please re-enter password.")
-    st.experimental_rerun()
+    st.rerun() # Changed from st.experimental_rerun()
 
 st.sidebar.button("Full Reset App", help="Resets all spins and chart configurations to default.", on_click=full_reset)
 st.sidebar.markdown("---")
@@ -261,12 +271,12 @@ def make_encoding_chart(chart_config):
                 if cols[3].button("Remove", key=f'remove_range_{chart_id}_{i}'):
                     chart_config['ranges'].pop(i)
                     save_chart_configs(st.session_state.charts)
-                    st.experimental_rerun()
+                    st.rerun() # Changed from st.experimental_rerun()
 
             if st.button("Add Range", key=f'add_range_{chart_id}'):
                 chart_config['ranges'].append({'min': 0, 'max': 36, 'formula': '-n'})
                 save_chart_configs(st.session_state.charts)
-                st.experimental_rerun()
+                st.rerun() # Changed from st.experimental_rerun()
 
         with col2:
             st.write("### Display Options")
@@ -279,7 +289,7 @@ def make_encoding_chart(chart_config):
             if st.button("Remove Chart", key=f'remove_chart_{chart_id}', help="Removes this chart"):
                 st.session_state.charts = [c for c in st.session_state.charts if c['id'] != chart_id]
                 save_chart_configs(st.session_state.charts)
-                st.experimental_rerun()
+                st.rerun() # Changed from st.experimental_rerun()
 
         st.markdown("---")
 
@@ -358,10 +368,11 @@ if st.button("Add New Chart"):
     st.session_state.charts.append(new_chart_config)
     st.session_state.next_chart_id += 1
     save_chart_configs(st.session_state.charts)
-    st.experimental_rerun()
+    st.rerun() # Changed from st.experimental_rerun()
 
 for chart_conf in st.session_state.charts:
     make_encoding_chart(chart_conf)
     st.markdown("---")
 
 save_chart_configs(st.session_state.charts)
+```
