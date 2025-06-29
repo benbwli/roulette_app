@@ -101,7 +101,11 @@ if 'charts' not in st.session_state:
             if 'ema_toggles' not in chart or not chart['ema_toggles']:
                 chart['ema_toggles'] = [{'id': 1, 'enabled': True, 'window': 16}]
             else:
+                # Ensure next_ema_id is correctly set if EMAs exist
                 chart['next_ema_id'] = max([e['id'] for e in chart['ema_toggles']]) + 1 if chart['ema_toggles'] else 1
+            # Ensure bb_settings exist if BB is toggled on during load
+            if chart.get('bb_toggle', False) and 'bb_settings' not in chart:
+                chart['bb_settings'] = {'window': 16, 'std_devs': 1}
     else:
         st.session_state.charts = get_default_chart_configs()
         st.session_state.next_chart_id = len(st.session_state.charts) + 1
@@ -213,7 +217,11 @@ def encode_roulette(n, ranges):
     return 0
 
 def calculate_rsi(data, period=14):
+    if len(data) < 2: # Need at least two data points for deltas
+        return np.zeros(len(data))
+    
     deltas = np.diff(data)
+    # Ensure deltas has enough length for the period
     if len(deltas) < period - 1:
         return np.zeros(len(data))
 
@@ -249,12 +257,14 @@ def calculate_rsi(data, period=14):
 # Function to calculate expanding EMA
 def calculate_expanding_ema(data, window):
     ema_vals = []
-    if not data: return ema_vals # Handle empty data
+    if not data: return np.array(ema_vals) # Handle empty data
     for i in range(len(data)):
-        if i < window:
-            ema_vals.append(np.mean(data[:i+1]))
+        # Ensure slice is not empty; np.mean on empty raises RuntimeWarning
+        current_slice = data[:i+1] if i < window else data[i-window+1:i+1]
+        if len(current_slice) > 0:
+            ema_vals.append(np.mean(current_slice))
         else:
-            ema_vals.append(np.mean(data[i-window+1:i+1]))
+            ema_vals.append(np.nan) # Append NaN if slice is unexpectedly empty
     return np.array(ema_vals)
 
 # Function to calculate expanding Bollinger Bands
@@ -262,18 +272,26 @@ def calculate_expanding_bollinger_bands(data, window, std_devs):
     rolling_mean = []
     rolling_std = []
     if not data: return np.array([]), np.array([]), np.array([]) # Handle empty data
+    
     for i in range(len(data)):
-        if i < window:
-            rolling_mean.append(np.mean(data[:i+1]))
-            rolling_std.append(np.std(data[:i+1]))
+        current_slice = data[:i+1] if i < window else data[i-window+1:i+1]
+        
+        if len(current_slice) > 0:
+            mean_val = np.mean(current_slice)
+            # Std dev of a single number is 0; avoid NaN for < 2 elements if possible, or accept 0
+            std_val = np.std(current_slice) if len(current_slice) > 1 else 0 
         else:
-            rolling_mean.append(np.mean(data[i-window+1:i+1]))
-            rolling_std.append(np.std(data[i-window+1:i+1]))
+            mean_val = np.nan
+            std_val = np.nan # Or 0 depending on desired behavior for empty slices
+
+        rolling_mean.append(mean_val)
+        rolling_std.append(std_val)
     
     rolling_mean = np.array(rolling_mean)
     rolling_std = np.array(rolling_std)
     upper_band = rolling_mean + (std_devs * rolling_std)
     lower_band = rolling_mean - (std_devs * rolling_std)
+    
     return rolling_mean, upper_band, lower_band
 
 
@@ -336,11 +354,17 @@ def make_encoding_chart(chart_config):
             
             # EMA Toggles and Settings (Multiple EMAs)
             ema_general_cols = st.columns([0.6, 0.4])
-            ema_general_toggle = ema_general_cols[0].checkbox('Show EMAs', value=any(e['enabled'] for e in chart_config['ema_toggles']), key=f'ema_general_{chart_id}')
+            ema_general_toggle = ema_general_cols[0].checkbox('Show EMAs', value=any(e['enabled'] for e in chart_config.get('ema_toggles',[])), key=f'ema_general_{chart_id}')
+            # Defensive check for ema_toggles being empty or missing during initial load/reset
+            if 'ema_toggles' not in chart_config:
+                chart_config['ema_toggles'] = []
 
             if ema_general_toggle:
                 with ema_general_cols[1].expander("Edit EMAs"):
                     # Manage existing EMAs
+                    if not chart_config['ema_toggles']:
+                        st.info("No EMAs added yet. Click 'Add New EMA'.")
+                    
                     for i, ema_conf in enumerate(chart_config['ema_toggles']):
                         ema_row_cols = st.columns([0.6, 0.3, 0.1])
                         ema_conf['enabled'] = ema_row_cols[0].checkbox(f'EMA {ema_conf["id"]}', value=ema_conf['enabled'], key=f'ema_toggle_{chart_id}_{ema_conf["id"]}')
@@ -352,8 +376,8 @@ def make_encoding_chart(chart_config):
 
                     # Add new EMA
                     if st.button("Add New EMA", key=f'add_ema_{chart_id}'):
-                        if 'next_ema_id' not in chart_config:
-                            chart_config['next_ema_id'] = 1
+                        if 'next_ema_id' not in chart_config: # Ensure this exists if chart config was loaded from older version
+                            chart_config['next_ema_id'] = (max([e['id'] for e in chart_config['ema_toggles']]) + 1) if chart_config['ema_toggles'] else 1
                         chart_config['ema_toggles'].append({'id': chart_config['next_ema_id'], 'enabled': True, 'window': 16})
                         chart_config['next_ema_id'] += 1
                         save_json_file(st.session_state.charts, CHART_CONFIG_FILE)
@@ -383,19 +407,24 @@ def make_encoding_chart(chart_config):
                 for ema_conf in chart_config['ema_toggles']:
                     if ema_conf['enabled']:
                         ema_vals = calculate_expanding_ema(cumulative_scores, ema_conf['window'])
-                        ax.plot(ema_vals, label=f'EMA {ema_conf["window"]}') # Label with window size
+                        # Only plot if ema_vals is not empty and doesn't contain just NaNs
+                        if ema_vals.size > 0 and not np.all(np.isnan(ema_vals)):
+                             ax.plot(ema_vals, label=f'EMA {ema_conf["window"]}') # Label with window size
 
             # Bollinger Bands Plot
             if chart_config['bb_toggle']:
                 bb_window = chart_config['bb_settings']['window']
                 bb_std_devs = chart_config['bb_settings']['std_devs']
                 _, upper_band, lower_band = calculate_expanding_bollinger_bands(cumulative_scores, bb_window, bb_std_devs)
-                ax.plot(upper_band, color='purple', linestyle='--', label=f'BB +{bb_std_devs}σ ({bb_window})')
-                ax.plot(lower_band, color='purple', linestyle='--', label=f'BB -{bb_std_devs}σ ({bb_window})')
+                # Only plot if bands are not empty and not all NaNs
+                if upper_band.size > 0 and not np.all(np.isnan(upper_band)):
+                    ax.plot(upper_band, color='purple', linestyle='--', label=f'BB +{bb_std_devs}σ ({bb_window})')
+                    ax.plot(lower_band, color='purple', linestyle='--', label=f'BB -{bb_std_devs}σ ({bb_window})')
 
 
             # Peaks/Troughs
             if chart_config['peaks_toggle']:
+                # Find peaks and troughs only if there are enough points after encoding
                 if len(cumulative_scores) > 1:
                     peaks, _ = find_peaks(cumulative_scores, distance=5, prominence=10)
                     troughs, _ = find_peaks(-np.array(cumulative_scores), distance=5, prominence=10)
@@ -418,16 +447,20 @@ def make_encoding_chart(chart_config):
             if chart_config['rsi_toggle']:
                 rsi_fig, rsi_ax = plt.subplots(figsize=(12, 2))
                 rsi_vals = calculate_rsi(cumulative_scores)
-                rsi_ax.plot(rsi_vals, color='magenta', label='RSI')
-                rsi_ax.axhline(70, color='red', linestyle='--', linewidth=1)
-                rsi_ax.axhline(30, color='green', linestyle='--', linewidth=1)
-                rsi_ax.set_ylim(0, 100)
-                rsi_ax.set_ylabel("RSI")
-                rsi_ax.set_xlabel("Spin Number")
-                rsi_ax.grid(True)
-                rsi_ax.legend()
-                st.pyplot(rsi_fig)
-                plt.close(rsi_fig)
+                # Only plot if rsi_vals is not empty and doesn't contain just NaNs
+                if rsi_vals.size > 0 and not np.all(np.isnan(rsi_vals)):
+                    rsi_ax.plot(rsi_vals, color='magenta', label='RSI')
+                    rsi_ax.axhline(70, color='red', linestyle='--', linewidth=1)
+                    rsi_ax.axhline(30, color='green', linestyle='--', linewidth=1)
+                    rsi_ax.set_ylim(0, 100)
+                    rsi_ax.set_ylabel("RSI")
+                    rsi_ax.set_xlabel("Spin Number")
+                    rsi_ax.grid(True)
+                    rsi_ax.legend()
+                    st.pyplot(rsi_fig)
+                    plt.close(rsi_fig)
+                else:
+                    st.info(f"RSI for Chart #{chart_id} cannot be computed with current data.")
         else:
             st.info("No spins recorded yet. Add a spin using the sidebar input.")
 
