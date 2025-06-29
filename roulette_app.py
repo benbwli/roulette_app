@@ -22,13 +22,16 @@ ODDEVEN_CHART_CONFIG_FILE = "roulette_oddeven_config.json"
 # --- Custom JSON Encoder for NumPy types ---
 class NpEncoder(json.JSONEncoder):
     def default(self, obj):
+        # Explicitly convert NumPy integers and floats to standard Python types
         if isinstance(obj, np.integer):
             return int(obj)
         if isinstance(obj, np.floating):
             return float(obj)
-        if isinstance(obj, np.ndarray): # Not directly used for saving config, but good to have
+        # Handle NumPy arrays by converting them to lists
+        if isinstance(obj, np.ndarray):
             return obj.tolist()
-        return json.JSONEncoder.default(self, obj)
+        # Let the base class default method raise the TypeError for other types
+        return super().default(obj) # Correct way to call parent's default
 
 # --- Function to load data from file ---
 def load_json_file(file_path, default_value, warning_message):
@@ -44,7 +47,8 @@ def load_json_file(file_path, default_value, warning_message):
 # --- Function to save data to file ---
 def save_json_file(data, file_path):
     with open(file_path, "w") as f:
-        json.dump(data, f, cls=NpEncoder, indent=4) # Use custom encoder and indent for readability
+        # Use custom encoder and indent for readability
+        json.dump(data, f, cls=NpEncoder, indent=4) 
 
 # --- Initial Default Chart Configurations ---
 def get_default_chart_configs():
@@ -53,7 +57,7 @@ def get_default_chart_configs():
             'id': 1,
             'ranges': [{'min': 0, 'max': 26, 'formula': '-n'}, {'min': 27, 'max': 36, 'formula': 'n+40'}],
             'bb_toggle': True,
-            'bb_settings': {'window': 16, 'std_devs': 1.0},
+            'bb_settings': {'window': 16, 'std_devs': 1.0}, # Ensure default is float
             'ema_toggles': [{'id': 1, 'enabled': True, 'window': 16}], # List of EMA configs
             'rsi_toggle': True,
             'peaks_toggle': True,
@@ -63,7 +67,7 @@ def get_default_chart_configs():
             'id': 2,
             'ranges': [{'min': 0, 'max': 26, 'formula': '-n'}, {'min': 27, 'max': 36, 'formula': 'n+40'}],
             'bb_toggle': False, # Default BB off for second chart
-            'bb_settings': {'window': 16, 'std_devs': 1.0},
+            'bb_settings': {'window': 16, 'std_devs': 1.0}, # Ensure default is float
             'ema_toggles': [{'id': 1, 'enabled': True, 'window': 16}],
             'rsi_toggle': True,
             'peaks_toggle': True,
@@ -75,7 +79,7 @@ def get_default_chart_configs():
 def get_default_oddeven_config():
     return {
         'bb_toggle': True,
-        'bb_settings': {'window': 16, 'std_devs': 2.0}, # Default 2 std for Odd/Even
+        'bb_settings': {'window': 16, 'std_devs': 2.0}, # Default 2 std for Odd/Even (ensure float)
         'ema_toggles': [{'id': 1, 'enabled': True, 'window': 16}],
         'rsi_toggle': True,
         'peaks_toggle': True,
@@ -101,7 +105,7 @@ def check_password():
         hashed_attempt = hashlib.sha256(password_attempt.encode()).hexdigest()
         if hashed_attempt == CORRECT_PASSWORD_HASH:
             st.session_state[AUTH_KEY] = True
-            st.rerun()
+            st.rerun() # Use st.rerun()
             return True
         else:
             st.sidebar.error("Incorrect password")
@@ -122,14 +126,19 @@ if 'charts' not in st.session_state:
     loaded_charts = load_json_file(CHART_CONFIG_FILE, [], "Corrupted chart configurations file, starting with default charts.")
     if loaded_charts:
         st.session_state.charts = loaded_charts
+        # Ensure 'next_chart_id' is correctly set
         st.session_state.next_chart_id = max([c['id'] for c in loaded_charts]) + 1 if loaded_charts else 1
         for chart in st.session_state.charts:
+            # Ensure 'ema_toggles' and 'next_ema_id' are present and correctly initialized
             if 'ema_toggles' not in chart or not chart['ema_toggles']:
                 chart['ema_toggles'] = [{'id': 1, 'enabled': True, 'window': 16}]
             if 'next_ema_id' not in chart:
                 chart['next_ema_id'] = (max([e['id'] for e in chart['ema_toggles']]) + 1) if chart['ema_toggles'] else 1
+            # Ensure 'bb_settings' exist and 'std_devs' is float
             if chart.get('bb_toggle', False) and 'bb_settings' not in chart:
                 chart['bb_settings'] = {'window': 16, 'std_devs': 1.0}
+            elif 'bb_settings' in chart and isinstance(chart['bb_settings'].get('std_devs'), int):
+                chart['bb_settings']['std_devs'] = float(chart['bb_settings']['std_devs'])
     else:
         st.session_state.charts = get_default_chart_configs()
         st.session_state.next_chart_id = len(st.session_state.charts) + 1
@@ -141,14 +150,16 @@ if 'oddeven_config' not in st.session_state:
     loaded_oddeven_config = load_json_file(ODDEVEN_CHART_CONFIG_FILE, None, "Corrupted Odd/Even chart configuration, resetting to default.")
     if loaded_oddeven_config:
         st.session_state.oddeven_config = loaded_oddeven_config
+        # Ensure 'ema_toggles' and 'next_ema_id' are present and correctly initialized
         if 'ema_toggles' not in st.session_state.oddeven_config or not st.session_state.oddeven_config['ema_toggles']:
             st.session_state.oddeven_config['ema_toggles'] = [{'id': 1, 'enabled': True, 'window': 16}]
         if 'next_ema_id' not in st.session_state.oddeven_config:
             st.session_state.oddeven_config['next_ema_id'] = (max([e['id'] for e in st.session_state.oddeven_config['ema_toggles']]) + 1) if st.session_state.oddeven_config['ema_toggles'] else 1
-        # Ensure bb_settings for odd/even chart are floats
-        if st.session_state.oddeven_config.get('bb_toggle', False) and 'bb_settings' in st.session_state.oddeven_config:
-            if isinstance(st.session_state.oddeven_config['bb_settings'].get('std_devs'), int):
-                st.session_state.oddeven_config['bb_settings']['std_devs'] = float(st.session_state.oddeven_config['bb_settings']['std_devs'])
+        # Ensure 'bb_settings' exist and 'std_devs' is float
+        if st.session_state.oddeven_config.get('bb_toggle', False) and 'bb_settings' not in st.session_state.oddeven_config:
+            st.session_state.oddeven_config['bb_settings'] = {'window': 16, 'std_devs': 2.0} # Set default as float
+        elif 'bb_settings' in st.session_state.oddeven_config and isinstance(st.session_state.oddeven_config['bb_settings'].get('std_devs'), int):
+            st.session_state.oddeven_config['bb_settings']['std_devs'] = float(st.session_state.oddeven_config['bb_settings']['std_devs'])
     else:
         st.session_state.oddeven_config = get_default_oddeven_config()
 
@@ -220,7 +231,6 @@ if st.sidebar.button("Clear All Spins", help="This will reset all recorded spins
     st.session_state.spins = []
     save_json_file(st.session_state.spins, SPINS_FILE)
     # Also reset the Odd/Even streak state when clearing all spins
-    # These are part of the oddeven_config, so update that dictionary
     st.session_state.oddeven_config['last_parity'] = None
     st.session_state.oddeven_config['current_streak'] = 0
     st.session_state.oddeven_config['streak_type'] = None
@@ -346,13 +356,14 @@ def calculate_expanding_bollinger_bands(data, window, std_devs):
     return rolling_mean, upper_band, lower_band
 
 # --- New Scoring Logic for Odd/Even Streaks ---
-def calculate_odd_even_scores(spins_list, oddeven_state):
+def calculate_odd_even_scores(spins_list, oddeven_state_for_calculation):
     scores = []
     
     # Initialize state for this calculation pass based on the passed oddeven_state
-    last_parity = oddeven_state['last_parity']
-    current_streak = oddeven_state['current_streak']
-    streak_type = oddeven_state['streak_type'] # 'odd', 'even', or None
+    # Make a local copy of state variables to update during this function's run
+    last_parity = oddeven_state_for_calculation.get('last_parity')
+    current_streak = oddeven_state_for_calculation.get('current_streak', 0)
+    streak_type = oddeven_state_for_calculation.get('streak_type')
 
     for n in spins_list:
         if n == 0:
@@ -383,7 +394,7 @@ def calculate_odd_even_scores(spins_list, oddeven_state):
     # Return calculated scores AND the updated state for next time
     return np.array(scores), {
         'last_parity': last_parity,
-        'current_streak': current_streak,
+        'current_streak': int(current_streak), # Explicitly convert to Python int
         'streak_type': streak_type
     }
 
@@ -401,9 +412,9 @@ def render_indicator_chart(title, spins_data, chart_config, chart_type_key="cust
         elif chart_type_key == "oddeven":
             st.write("Spins are encoded based on odd/even streaks (0 is neutral).")
             # Display current streak info if applicable
-            current_oddeven_state = chart_config.get('oddeven_state_info', {}) # Use .get with a default for safety
-            if current_oddeven_state.get('current_streak', 0) > 0:
-                st.markdown(f"**Current Streak:** {current_oddeven_state['current_streak']} {current_oddeven_state['streak_type']}s")
+            current_oddeven_state_display = chart_config.get('oddeven_state_info', {}) 
+            if current_oddeven_state_display.get('current_streak', 0) > 0:
+                st.markdown(f"**Current Streak:** {current_oddeven_state_display['current_streak']} {current_oddeven_state_display['streak_type']}s")
             else:
                 st.markdown("**Current Streak:** None")
 
@@ -416,7 +427,7 @@ def render_indicator_chart(title, spins_data, chart_config, chart_type_key="cust
         if chart_config['bb_toggle']:
             with bb_cols[1].expander(f"Edit BB ({chart_type_key})"):
                 if 'bb_settings' not in chart_config:
-                    chart_config['bb_settings'] = {'window': 16, 'std_devs': 1.0} # Ensure default is float
+                    chart_config['bb_settings'] = {'window': 16, 'std_devs': 1.0}
                 
                 chart_config['bb_settings']['window'] = st.number_input(
                     'BB Length', min_value=2, max_value=100, value=chart_config['bb_settings']['window'], step=1, key=f'bb_len_{chart_type_key}_{chart_config.get("id", "")}'
@@ -443,7 +454,6 @@ def render_indicator_chart(title, spins_data, chart_config, chart_type_key="cust
                     ema_conf['window'] = ema_row_cols[1].number_input(f'Length {ema_conf["id"]}', min_value=2, max_value=100, value=ema_conf['window'], step=1, key=f'ema_len_{chart_type_key}_{chart_config.get("id", "")}_{ema_conf["id"]}')
                     if ema_row_cols[2].button('X', key=f'remove_ema_{chart_type_key}_{chart_config.get("id", "")}_{ema_conf["id"]}'):
                         chart_config['ema_toggles'].pop(i)
-                        # Save the correct config type
                         if chart_type_key == "custom":
                             save_json_file(st.session_state.charts, CHART_CONFIG_FILE)
                         elif chart_type_key == "oddeven":
@@ -455,7 +465,6 @@ def render_indicator_chart(title, spins_data, chart_config, chart_type_key="cust
                         chart_config['next_ema_id'] = (max([e['id'] for e in chart_config['ema_toggles']]) + 1) if chart_config['ema_toggles'] else 1
                     chart_config['ema_toggles'].append({'id': chart_config['next_ema_id'], 'enabled': True, 'window': 16})
                     chart_config['next_ema_id'] += 1
-                    # Save the correct config type
                     if chart_type_key == "custom":
                         save_json_file(st.session_state.charts, CHART_CONFIG_FILE)
                     elif chart_type_key == "oddeven":
@@ -480,7 +489,7 @@ def render_indicator_chart(title, spins_data, chart_config, chart_type_key="cust
             cumulative_scores = np.cumsum(encoded_values)
         elif chart_type_key == "oddeven":
             # Pass the current state and get updated state back
-            scores, updated_oddeven_state = calculate_odd_even_scores(spins_data.tolist(), chart_config) # Pass as list
+            scores, updated_oddeven_state = calculate_odd_even_scores(spins_data.tolist(), st.session_state.oddeven_config) # Pass as list
             cumulative_scores = np.cumsum(scores)
             
             # Store the updated state back for next rerun.
@@ -491,6 +500,7 @@ def render_indicator_chart(title, spins_data, chart_config, chart_type_key="cust
             st.session_state.oddeven_config['streak_type'] = updated_oddeven_state['streak_type']
             
             # Store a copy for display within the current chart's config (not session state directly)
+            # This avoids circular references or issues if 'chart_config' were to be saved directly
             chart_config['oddeven_state_info'] = updated_oddeven_state.copy()
 
 
@@ -602,7 +612,7 @@ st.write(f"**Odd numbers:** {num_odds} | **Even numbers:** {num_evens} | **Zeros
 render_indicator_chart(
     "Roulette Chart (Odd/Even Streak Scoring)",
     np.asarray(st.session_state.spins),
-    st.session_state.oddeven_config,
+    st.session_state.oddeven_config, # Pass the actual session state config
     chart_type_key="oddeven"
 )
 
