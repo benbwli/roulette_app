@@ -43,8 +43,8 @@ def get_default_chart_configs():
             'id': 1,
             'ranges': [{'min': 0, 'max': 26, 'formula': '-n'}, {'min': 27, 'max': 36, 'formula': 'n+40'}],
             'bb_toggle': True,
-            'bb_settings': {'window': 16, 'std_devs': 1},
-            'ema_toggles': [{'id': 1, 'enabled': True, 'window': 16}], # List of EMA configs
+            'bb_settings': {'window': 16, 'std_devs': 1.0}, # Changed 1 to 1.0
+            'ema_toggles': [{'id': 1, 'enabled': True, 'window': 16}],
             'rsi_toggle': True,
             'peaks_toggle': True,
             'dots_toggle': True
@@ -52,8 +52,8 @@ def get_default_chart_configs():
         {
             'id': 2,
             'ranges': [{'min': 0, 'max': 26, 'formula': '-n'}, {'min': 27, 'max': 36, 'formula': 'n+40'}],
-            'bb_toggle': False, # Default BB off for second chart
-            'bb_settings': {'window': 16, 'std_devs': 1},
+            'bb_toggle': False,
+            'bb_settings': {'window': 16, 'std_devs': 1.0}, # Changed 1 to 1.0
             'ema_toggles': [{'id': 1, 'enabled': True, 'window': 16}],
             'rsi_toggle': True,
             'peaks_toggle': True,
@@ -65,17 +65,16 @@ def get_default_chart_configs():
 def get_default_oddeven_config():
     return {
         'bb_toggle': True,
-        'bb_settings': {'window': 16, 'std_devs': 2}, # Default 2 std for Odd/Even
+        'bb_settings': {'window': 16, 'std_devs': 2.0}, # Changed 2 to 2.0
         'ema_toggles': [{'id': 1, 'enabled': True, 'window': 16}],
         'rsi_toggle': True,
         'peaks_toggle': True,
         'dots_toggle': True,
-        'next_ema_id': 2, # For managing EMAs in Odd/Even chart
-        'last_parity': None, # Stores last spin's parity: 0 for even, 1 for odd, None for 0 or first spin
-        'current_streak': 0, # Stores length of current streak
-        'streak_type': None # Stores type of streak: 'odd' or 'even'
+        'next_ema_id': 2,
+        'last_parity': None,
+        'current_streak': 0,
+        'streak_type': None
     }
-
 # --- Authentication Logic ---
 if AUTH_KEY not in st.session_state:
     st.session_state[AUTH_KEY] = False
