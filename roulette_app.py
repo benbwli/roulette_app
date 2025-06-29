@@ -13,47 +13,49 @@ st.set_page_config(layout="wide")
 CORRECT_PASSWORD_HASH = hashlib.sha256("roulette_god".encode()).hexdigest()
 AUTH_KEY = "authenticated"
 
-# --- File path for storing spins ---
+# --- File path for storing data ---
 SPINS_FILE = "roulette_spins.json"
 CHART_CONFIG_FILE = "roulette_chart_configs.json"
 
-# --- Function to load spins from file ---
-def load_spins():
-    if os.path.exists(SPINS_FILE):
+# --- Function to load data from file ---
+def load_json_file(file_path, default_value, warning_message):
+    if os.path.exists(file_path):
         try:
-            with open(SPINS_FILE, "r") as f:
+            with open(file_path, "r") as f:
                 return json.load(f)
         except json.JSONDecodeError:
-            st.warning("Corrupted spins file, starting with empty spins.")
-            return []
-    return []
+            st.warning(warning_message)
+            return default_value
+    return default_value
 
-# --- Function to save spins to file ---
-def save_spins(spins_list):
-    with open(SPINS_FILE, "w") as f:
-        json.dump(spins_list, f)
-
-# --- Function to load chart configurations from file ---
-def load_chart_configs():
-    if os.path.exists(CHART_CONFIG_FILE):
-        try:
-            with open(CHART_CONFIG_FILE, "r") as f:
-                return json.load(f)
-        except json.JSONDecodeError:
-            st.warning("Corrupted chart configurations file, starting with default charts.")
-            return []
-    return []
-
-# --- Function to save chart configurations to file ---
-def save_chart_configs(chart_configs_list):
-    with open(CHART_CONFIG_FILE, "w") as f:
-        json.dump(chart_configs_list, f)
+# --- Function to save data to file ---
+def save_json_file(data, file_path):
+    with open(file_path, "w") as f:
+        json.dump(data, f)
 
 # --- Initial Default Chart Configurations ---
 def get_default_chart_configs():
     return [
-        {'id': 1, 'bb_default': True, 'ranges': [{'min': 0, 'max': 26, 'formula': '-n'}, {'min': 27, 'max': 36, 'formula': 'n+40'}], 'ema_toggle': True, 'rsi_toggle': True, 'peaks_toggle': True, 'dots_toggle': True},
-        {'id': 2, 'bb_default': False, 'ranges': [{'min': 0, 'max': 26, 'formula': '-n'}, {'min': 27, 'max': 36, 'formula': 'n+40'}], 'ema_toggle': True, 'rsi_toggle': True, 'peaks_toggle': True, 'dots_toggle': True}
+        {
+            'id': 1,
+            'ranges': [{'min': 0, 'max': 26, 'formula': '-n'}, {'min': 27, 'max': 36, 'formula': 'n+40'}],
+            'bb_toggle': True,
+            'bb_settings': {'window': 16, 'std_devs': 1},
+            'ema_toggles': [{'id': 1, 'enabled': True, 'window': 16}], # List of EMA configs
+            'rsi_toggle': True,
+            'peaks_toggle': True,
+            'dots_toggle': True
+        },
+        {
+            'id': 2,
+            'ranges': [{'min': 0, 'max': 26, 'formula': '-n'}, {'min': 27, 'max': 36, 'formula': 'n+40'}],
+            'bb_toggle': False, # Default BB off for second chart
+            'bb_settings': {'window': 16, 'std_devs': 1},
+            'ema_toggles': [{'id': 1, 'enabled': True, 'window': 16}],
+            'rsi_toggle': True,
+            'peaks_toggle': True,
+            'dots_toggle': True
+        }
     ]
 
 # --- Authentication Logic ---
@@ -71,7 +73,7 @@ def check_password():
         hashed_attempt = hashlib.sha256(password_attempt.encode()).hexdigest()
         if hashed_attempt == CORRECT_PASSWORD_HASH:
             st.session_state[AUTH_KEY] = True
-            st.rerun() # Changed from st.experimental_rerun()
+            st.rerun() # Use st.rerun()
             return True
         else:
             st.sidebar.error("Incorrect password")
@@ -86,27 +88,37 @@ st.title("Interactive Roulette Spin Analyzer")
 
 # --- Initialize Session State for Spins and Charts ---
 if 'spins' not in st.session_state:
-    st.session_state.spins = load_spins()
+    st.session_state.spins = load_json_file(SPINS_FILE, [], "Corrupted spins file, starting with empty spins.")
 
 if 'charts' not in st.session_state:
-    loaded_charts = load_chart_configs()
+    loaded_charts = load_json_file(CHART_CONFIG_FILE, [], "Corrupted chart configurations file, starting with default charts.")
     if loaded_charts:
         st.session_state.charts = loaded_charts
+        # Find the maximum existing chart ID to ensure unique new IDs
         st.session_state.next_chart_id = max([c['id'] for c in loaded_charts]) + 1 if loaded_charts else 1
+        # Also ensure EMA IDs are correctly handled on load
+        for chart in st.session_state.charts:
+            if 'ema_toggles' not in chart or not chart['ema_toggles']:
+                chart['ema_toggles'] = [{'id': 1, 'enabled': True, 'window': 16}]
+            else:
+                chart['next_ema_id'] = max([e['id'] for e in chart['ema_toggles']]) + 1 if chart['ema_toggles'] else 1
     else:
         st.session_state.charts = get_default_chart_configs()
         st.session_state.next_chart_id = len(st.session_state.charts) + 1
+        for chart in st.session_state.charts:
+            chart['next_ema_id'] = len(chart['ema_toggles']) + 1 # Initialize next EMA ID for default charts
 
 
 # --- User Input for New Spin (Single) ---
 st.sidebar.header("Add New Spin")
 new_spin_value = st.sidebar.number_input("Enter single roulette number (0-36):", min_value=0, max_value=36, value=0, step=1, key="new_spin_input")
 
-def add_spin_and_save():
+# Callbacks for Add/Delete spins - removed st.rerun()
+def add_spin_and_save_callback():
     st.session_state.spins.append(new_spin_value)
-    save_spins(st.session_state.spins)
+    save_json_file(st.session_state.spins, SPINS_FILE)
 
-st.sidebar.button("Record Single Spin", on_click=add_spin_and_save)
+st.sidebar.button("Record Single Spin", on_click=add_spin_and_save_callback)
 
 st.sidebar.markdown("---")
 
@@ -119,7 +131,7 @@ multiple_spins_text = st.sidebar.text_area(
     key="multiple_spins_input"
 )
 
-def add_multiple_spins_and_save():
+def add_multiple_spins_and_save_callback():
     if multiple_spins_text:
         raw_numbers = multiple_spins_text.replace(',', ' ').replace('\n', ' ').split(' ')
         parsed_numbers = []
@@ -138,55 +150,58 @@ def add_multiple_spins_and_save():
         
         if parsed_numbers:
             st.session_state.spins.extend(parsed_numbers)
-            save_spins(st.session_state.spins)
+            save_json_file(st.session_state.spins, SPINS_FILE)
             st.sidebar.success(f"Added {len(parsed_numbers)} spins.")
             if errors:
                 st.sidebar.warning("Some numbers were not added due to errors:\n" + "\n".join(errors))
-            st.rerun() # Changed from st.experimental_rerun()
+            # No st.rerun() here
         elif errors:
             st.sidebar.error("No valid spins to add. Errors found:\n" + "\n".join(errors))
         else:
             st.sidebar.info("No numbers entered.")
 
-st.sidebar.button("Record Multiple Spins", on_click=add_multiple_spins_and_save)
+st.sidebar.button("Record Multiple Spins", on_click=add_multiple_spins_and_save_callback)
 
 
 st.sidebar.markdown("---")
 st.sidebar.write(f"Total Spins Recorded: **{len(st.session_state.spins)}**")
 
 # --- Delete Last Spin Button ---
-def delete_last_spin():
+def delete_last_spin_callback():
     if st.session_state.spins:
         st.session_state.spins.pop()
-        save_spins(st.session_state.spins)
-        st.rerun() # Changed from st.experimental_rerun()
+        save_json_file(st.session_state.spins, SPINS_FILE)
+    # No st.rerun() here
 
-st.sidebar.button("Delete Last Spin", on_click=delete_last_spin, disabled=(not st.session_state.spins), help="Removes the most recent spin entry.")
+st.sidebar.button("Delete Last Spin", on_click=delete_last_spin_callback, disabled=(not st.session_state.spins), help="Removes the most recent spin entry.")
 
 if st.sidebar.button("Clear All Spins", help="This will reset all recorded spins."):
     st.session_state.spins = []
-    save_spins([])
-    st.rerun() # Changed from st.experimental_rerun()
+    save_json_file(st.session_state.spins, SPINS_FILE)
+    # No st.rerun() here, button click already triggers a rerun
 
 # --- Full Reset Function ---
 def full_reset():
     st.session_state.spins = []
-    save_spins([])
+    save_json_file(st.session_state.spins, SPINS_FILE)
 
     st.session_state.charts = get_default_chart_configs()
-    save_chart_configs(st.session_state.charts)
+    save_json_file(st.session_state.charts, CHART_CONFIG_FILE)
 
     st.session_state.next_chart_id = len(st.session_state.charts) + 1
+    for chart in st.session_state.charts:
+        chart['next_ema_id'] = len(chart['ema_toggles']) + 1
     
     st.session_state[AUTH_KEY] = False
 
     st.success("App has been fully reset. Please re-enter password.")
-    st.rerun() # Changed from st.experimental_rerun()
+    st.rerun() # Use st.rerun()
 
 st.sidebar.button("Full Reset App", help="Resets all spins and chart configurations to default.", on_click=full_reset)
 st.sidebar.markdown("---")
 
-# --- Functions for Chart Logic ---
+
+# --- Functions for Chart Logic and Indicator Calculations ---
 def encode_roulette(n, ranges):
     for r in ranges:
         if r['min'] <= n <= r['max']:
@@ -231,6 +246,37 @@ def calculate_rsi(data, period=14):
 
     return rsi_vals
 
+# Function to calculate expanding EMA
+def calculate_expanding_ema(data, window):
+    ema_vals = []
+    if not data: return ema_vals # Handle empty data
+    for i in range(len(data)):
+        if i < window:
+            ema_vals.append(np.mean(data[:i+1]))
+        else:
+            ema_vals.append(np.mean(data[i-window+1:i+1]))
+    return np.array(ema_vals)
+
+# Function to calculate expanding Bollinger Bands
+def calculate_expanding_bollinger_bands(data, window, std_devs):
+    rolling_mean = []
+    rolling_std = []
+    if not data: return np.array([]), np.array([]), np.array([]) # Handle empty data
+    for i in range(len(data)):
+        if i < window:
+            rolling_mean.append(np.mean(data[:i+1]))
+            rolling_std.append(np.std(data[:i+1]))
+        else:
+            rolling_mean.append(np.mean(data[i-window+1:i+1]))
+            rolling_std.append(np.std(data[i-window+1:i+1]))
+    
+    rolling_mean = np.array(rolling_mean)
+    rolling_std = np.array(rolling_std)
+    upper_band = rolling_mean + (std_devs * rolling_std)
+    lower_band = rolling_mean - (std_devs * rolling_std)
+    return rolling_mean, upper_band, lower_band
+
+
 def make_encoding_chart(chart_config):
     chart_id = chart_config['id']
     
@@ -249,36 +295,79 @@ def make_encoding_chart(chart_config):
                 st.markdown(f"**Range {i+1}**")
                 cols = st.columns([1, 1, 2, 0.5])
                 
+                # Using unique keys for each input, values are read directly
                 min_val = cols[0].number_input(f'Min {chart_id}-{i}', min_value=0, max_value=36, value=r['min'], key=f'min_{chart_id}_{i}')
                 max_val = cols[1].number_input(f'Max {chart_id}-{i}', min_value=0, max_value=36, value=r['max'], key=f'max_{chart_id}_{i}')
                 formula_val = cols[2].text_input(f'Encode Formula {chart_id}-{i}', value=r['formula'], key=f'formula_{chart_id}_{i}')
                 
+                # Update chart_config directly from widget values
                 chart_config['ranges'][i]['min'] = min_val
                 chart_config['ranges'][i]['max'] = max_val
                 chart_config['ranges'][i]['formula'] = formula_val
 
                 if cols[3].button("Remove", key=f'remove_range_{chart_id}_{i}'):
                     chart_config['ranges'].pop(i)
-                    save_chart_configs(st.session_state.charts)
-                    st.rerun() # Changed from st.experimental_rerun()
+                    save_json_file(st.session_state.charts, CHART_CONFIG_FILE) # Save changes
+                    st.rerun()
 
             if st.button("Add Range", key=f'add_range_{chart_id}'):
                 chart_config['ranges'].append({'min': 0, 'max': 36, 'formula': '-n'})
-                save_chart_configs(st.session_state.charts)
-                st.rerun() # Changed from st.experimental_rerun()
+                save_json_file(st.session_state.charts, CHART_CONFIG_FILE) # Save changes
+                st.rerun()
 
         with col2:
             st.write("### Display Options")
-            chart_config['bb_toggle'] = st.checkbox('Bollinger Bands', value=chart_config.get('bb_toggle', chart_config['bb_default']), key=f'bb_{chart_id}')
-            chart_config['ema_toggle'] = st.checkbox('EMA', value=chart_config.get('ema_toggle', True), key=f'ema_{chart_id}')
+            
+            # Bollinger Bands Toggle and Settings
+            bb_cols = st.columns([0.6, 0.4])
+            chart_config['bb_toggle'] = bb_cols[0].checkbox('Bollinger Bands', value=chart_config.get('bb_toggle', True), key=f'bb_{chart_id}')
+            if chart_config['bb_toggle']:
+                with bb_cols[1].expander("Edit BB"):
+                    # Ensure bb_settings exists and has default values
+                    if 'bb_settings' not in chart_config:
+                        chart_config['bb_settings'] = {'window': 16, 'std_devs': 1}
+                    
+                    chart_config['bb_settings']['window'] = st.number_input(
+                        'BB Length', min_value=2, max_value=100, value=chart_config['bb_settings']['window'], step=1, key=f'bb_len_{chart_id}'
+                    )
+                    chart_config['bb_settings']['std_devs'] = st.number_input(
+                        'BB Std Devs', min_value=0.5, max_value=3.0, value=chart_config['bb_settings']['std_devs'], step=0.1, format="%.1f", key=f'bb_std_{chart_id}'
+                    )
+            
+            # EMA Toggles and Settings (Multiple EMAs)
+            ema_general_cols = st.columns([0.6, 0.4])
+            ema_general_toggle = ema_general_cols[0].checkbox('Show EMAs', value=any(e['enabled'] for e in chart_config['ema_toggles']), key=f'ema_general_{chart_id}')
+
+            if ema_general_toggle:
+                with ema_general_cols[1].expander("Edit EMAs"):
+                    # Manage existing EMAs
+                    for i, ema_conf in enumerate(chart_config['ema_toggles']):
+                        ema_row_cols = st.columns([0.6, 0.3, 0.1])
+                        ema_conf['enabled'] = ema_row_cols[0].checkbox(f'EMA {ema_conf["id"]}', value=ema_conf['enabled'], key=f'ema_toggle_{chart_id}_{ema_conf["id"]}')
+                        ema_conf['window'] = ema_row_cols[1].number_input(f'Length {ema_conf["id"]}', min_value=2, max_value=100, value=ema_conf['window'], step=1, key=f'ema_len_{chart_id}_{ema_conf["id"]}')
+                        if ema_row_cols[2].button('X', key=f'remove_ema_{chart_id}_{ema_conf["id"]}'):
+                            chart_config['ema_toggles'].pop(i)
+                            save_json_file(st.session_state.charts, CHART_CONFIG_FILE)
+                            st.rerun() # Rerun to remove EMA widget
+
+                    # Add new EMA
+                    if st.button("Add New EMA", key=f'add_ema_{chart_id}'):
+                        if 'next_ema_id' not in chart_config:
+                            chart_config['next_ema_id'] = 1
+                        chart_config['ema_toggles'].append({'id': chart_config['next_ema_id'], 'enabled': True, 'window': 16})
+                        chart_config['next_ema_id'] += 1
+                        save_json_file(st.session_state.charts, CHART_CONFIG_FILE)
+                        st.rerun() # Rerun to add new EMA widget
+
+
             chart_config['rsi_toggle'] = st.checkbox('RSI', value=chart_config.get('rsi_toggle', True), key=f'rsi_{chart_id}')
             chart_config['peaks_toggle'] = st.checkbox('Peaks/Troughs', value=chart_config.get('peaks_toggle', True), key=f'peaks_{chart_id}')
             chart_config['dots_toggle'] = st.checkbox('Dots', value=chart_config.get('dots_toggle', True), key=f'dots_{chart_id}')
             
             if st.button("Remove Chart", key=f'remove_chart_{chart_id}', help="Removes this chart"):
                 st.session_state.charts = [c for c in st.session_state.charts if c['id'] != chart_id]
-                save_chart_configs(st.session_state.charts)
-                st.rerun() # Changed from st.experimental_rerun()
+                save_json_file(st.session_state.charts, CHART_CONFIG_FILE)
+                st.rerun()
 
         st.markdown("---")
 
@@ -289,23 +378,23 @@ def make_encoding_chart(chart_config):
             fig, ax = plt.subplots(figsize=(12, 6))
             ax.plot(cumulative_scores, label='Cumulative Score')
 
-            if chart_config['ema_toggle']:
-                window = 16
-                if len(cumulative_scores) >= window:
-                    ema_vals = np.convolve(cumulative_scores, np.ones(window)/window, mode='valid')
-                    ax.plot(range(window-1, len(cumulative_scores)), ema_vals, color='orange', label=f'EMA {window}')
+            # EMA Plots (Loop through multiple EMAs)
+            if ema_general_toggle:
+                for ema_conf in chart_config['ema_toggles']:
+                    if ema_conf['enabled']:
+                        ema_vals = calculate_expanding_ema(cumulative_scores, ema_conf['window'])
+                        ax.plot(ema_vals, label=f'EMA {ema_conf["window"]}') # Label with window size
 
+            # Bollinger Bands Plot
             if chart_config['bb_toggle']:
-                window = 16
-                if len(cumulative_scores) >= window:
-                    rolling_mean = np.convolve(cumulative_scores, np.ones(window)/window, mode='valid')
-                    rolling_std = np.array([np.std(cumulative_scores[max(0, i-window+1):i+1]) for i in range(window-1, len(cumulative_scores))])
+                bb_window = chart_config['bb_settings']['window']
+                bb_std_devs = chart_config['bb_settings']['std_devs']
+                _, upper_band, lower_band = calculate_expanding_bollinger_bands(cumulative_scores, bb_window, bb_std_devs)
+                ax.plot(upper_band, color='purple', linestyle='--', label=f'BB +{bb_std_devs}σ ({bb_window})')
+                ax.plot(lower_band, color='purple', linestyle='--', label=f'BB -{bb_std_devs}σ ({bb_window})')
 
-                    upper_band = rolling_mean + rolling_std
-                    lower_band = rolling_mean - rolling_std
-                    ax.plot(range(window-1, len(cumulative_scores)), upper_band, color='purple', linestyle='--', label='BB +1σ')
-                    ax.plot(range(window-1, len(cumulative_scores)), lower_band, color='purple', linestyle='--', label='BB -1σ')
 
+            # Peaks/Troughs
             if chart_config['peaks_toggle']:
                 if len(cumulative_scores) > 1:
                     peaks, _ = find_peaks(cumulative_scores, distance=5, prominence=10)
@@ -313,6 +402,7 @@ def make_encoding_chart(chart_config):
                     ax.scatter(peaks, np.array(cumulative_scores)[peaks], color='green', marker='^', s=80, label='Local Highs')
                     ax.scatter(troughs, np.array(cumulative_scores)[troughs], color='blue', marker='v', s=80, label='Local Lows')
 
+            # Dots
             if chart_config['dots_toggle']:
                 ax.scatter(range(len(cumulative_scores)), cumulative_scores, color='red', s=20, alpha=0.7, label='Spin Dots')
 
@@ -324,6 +414,7 @@ def make_encoding_chart(chart_config):
             st.pyplot(fig)
             plt.close(fig)
 
+            # RSI Plot (separate figure as it has its own Y-axis)
             if chart_config['rsi_toggle']:
                 rsi_fig, rsi_ax = plt.subplots(figsize=(12, 2))
                 rsi_vals = calculate_rsi(cumulative_scores)
@@ -347,20 +438,24 @@ st.markdown("---")
 if st.button("Add New Chart"):
     new_chart_config = {
         'id': st.session_state.next_chart_id,
-        'bb_default': False,
         'ranges': [{'min': 0, 'max': 26, 'formula': '-n'}, {'min': 27, 'max': 36, 'formula': 'n+40'}],
-        'ema_toggle': True,
+        'bb_toggle': True,
+        'bb_settings': {'window': 16, 'std_devs': 1},
+        'ema_toggles': [{'id': 1, 'enabled': True, 'window': 16}],
+        'next_ema_id': 2, # Initialize next EMA ID for the new chart
         'rsi_toggle': True,
         'peaks_toggle': True,
         'dots_toggle': True
     }
     st.session_state.charts.append(new_chart_config)
     st.session_state.next_chart_id += 1
-    save_chart_configs(st.session_state.charts)
-    st.rerun() # Changed from st.experimental_rerun()
+    save_json_file(st.session_state.charts, CHART_CONFIG_FILE)
+    st.rerun()
 
 for chart_conf in st.session_state.charts:
     make_encoding_chart(chart_conf)
     st.markdown("---")
 
-save_chart_configs(st.session_state.charts)
+# Save chart configurations after all charts have been processed
+# This ensures any changes to display toggles or range inputs are persisted.
+save_json_file(st.session_state.charts, CHART_CONFIG_FILE)
